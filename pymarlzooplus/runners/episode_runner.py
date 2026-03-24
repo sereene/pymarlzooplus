@@ -124,7 +124,7 @@ class EpisodeRunner:
             reward, terminated, env_info = self.env.step(actions[0])
 
             # Render
-            if test_mode and self.args.render:
+            if test_mode and (self.args.render or self.args.save_replay):
                 self.env.render()
 
             ## Print info

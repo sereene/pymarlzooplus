@@ -196,15 +196,18 @@ class _OvercookedWrapper(MultiAgentEnv):
         # Make the environment step
         self._obs, reward, done, self._info = self._env.step(actions)
 
+        # 👇 [추가 1] reward가 shaped로 덮어씌워지기 전에, 순수 수프 배달 점수(sparse)를 빼돌립니다.
+        sparse_reward = float(reward) 
+
         if self.reward_type == "shaped":
             assert type(self._info['shaped_r_by_agent']) is list, \
                 "'self._info['shaped_r_by_agent']' is not a list! " + \
                 f"'self._info['shaped_r_by_agent']': {self._info['shaped_r_by_agent']}"
-            reward = sum(self._info['shaped_r_by_agent'])
-        # else: the other option is the sum of sparse rewards which is the default 'reward'
-
+            shaped_reward_sum = sum(self._info['shaped_r_by_agent'])
+            reward = sparse_reward + shaped_reward_sum
+        
         # Keep only 'TimeLimit.truncated' in 'self._info'
-        self._info = {"TimeLimit.truncated": self._info["TimeLimit.truncated"]}
+        self._info = {"TimeLimit.truncated": self._info.get("TimeLimit.truncated", False)}
 
         # Handle different cases of 'done'
         if isinstance(done, (list, tuple)):
@@ -212,8 +215,10 @@ class _OvercookedWrapper(MultiAgentEnv):
         else:
             assert isinstance(done, bool) and done is True
 
-        return float(reward), done, {}
-
+        # 👇 [수정 2] 빈 딕셔너리 {} 대신, 측정을 원하는 메트릭을 넘겨줍니다.
+        return float(reward), done, {"sparse_reward": sparse_reward}
+    
+    
     def get_obs(self):
         """ Returns all agent observations in a list """
         return self._obs
@@ -278,8 +283,16 @@ class _OvercookedWrapper(MultiAgentEnv):
             try:
                 image = self._env.render()
                 image = self.cv2.cvtColor(image, self.cv2.COLOR_BGR2RGB)
-                self.cv2.imshow("Overcooked", image)
-                self.cv2.waitKey(1)
+                
+                # 👇 [추가된 부분] 프레임 저장 리스트 생성 및 추가
+                if not hasattr(self, 'frames'):
+                    self.frames = []
+                self.frames.append(image)
+
+                # 화면에 직접 띄우는 건 render_bool이 True일 때만 실행 (서버 환경 에러 방지)
+                if self.render_bool:
+                    self.cv2.imshow("Overcooked", image)
+                    self.cv2.waitKey(1)
             except (Exception, SystemExit) as e:
                 self.internal_print_info = (
                     "\n\n###########################################################"
@@ -296,7 +309,35 @@ class _OvercookedWrapper(MultiAgentEnv):
         return self._seed
 
     def save_replay(self):
-        pass
+        # 👇 [수정된 부분] 모아둔 프레임이 있으면 mp4로 저장합니다.
+        if not hasattr(self, 'frames') or len(self.frames) == 0:
+            return
+            
+        import os
+        import time
+        
+        # 저장할 폴더 생성
+        os.makedirs(os.path.join("results", "video"), exist_ok=True)
+        
+        # 파일명 생성 (예: results/video/asymmetric_advantages_20260323_110933.mp4)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join("results", "video", f"overcooked_{self.key}_{timestamp}.mp4")
+
+        # OpenCV를 이용해 동영상으로 렌더링
+        height, width, layers = self.frames[0].shape
+        fourcc = self.cv2.VideoWriter_fourcc(*'mp4v') # mp4 코덱
+        video = self.cv2.VideoWriter(filepath, fourcc, 10, (width, height)) # 10 FPS로 설정
+
+        for frame in self.frames:
+            # OpenCV는 저장할 때 BGR 포맷을 기대하므로 다시 변환
+            bgr_frame = self.cv2.cvtColor(frame, self.cv2.COLOR_RGB2BGR)
+            video.write(bgr_frame)
+
+        video.release()
+        print(f"\n🎥 Video successfully saved to {filepath}\n")
+        
+        # 메모리 정리를 위해 프레임 리스트 초기화
+        self.frames = []
 
     @staticmethod
     def get_stats():

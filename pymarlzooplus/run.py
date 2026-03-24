@@ -322,6 +322,26 @@ def run_sequential(args, logger):
             for _ in range(n_test_runs):
                 runner.run(test_mode=True)
 
+            # 추가 : 로컬에 비디오 저장 및 WandB 업로드
+            if args.save_replay:
+                runner.save_replay()  # 1. 로컬에 비디오(mp4/gif) 파일 저장
+                time.sleep(2)  # 멀티프로세싱 환경에서 파일 저장이 완전히 끝날 때까지 2초 대기
+
+                video_dir = os.path.join("results", "video")
+                
+                if os.path.exists(video_dir):
+                    import glob
+                    import wandb
+                    # 가장 최근에 생성된 mp4 파일을 찾습니다.
+                    list_of_files = glob.glob(os.path.join(video_dir, '*.mp4'))
+                    if list_of_files and wandb.run is not None:
+                        latest_file = max(list_of_files, key=os.path.getctime)
+                        # WandB에 비디오 업로드 (재생 가능하도록 Video 객체로 감싸기)
+                        wandb.log({
+                            "Evaluation_Video": wandb.Video(latest_file, fps=10, format="mp4")
+                        }, step=runner.t_env)
+                
+
         if args.save_model and (
             runner.t_env - model_save_time >= args.save_model_interval
             or model_save_time == 0  # First episode
