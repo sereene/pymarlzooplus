@@ -196,7 +196,6 @@ class _OvercookedWrapper(MultiAgentEnv):
         # Make the environment step
         self._obs, reward, done, self._info = self._env.step(actions)
 
-        # 👇 [추가 1] reward가 shaped로 덮어씌워지기 전에, 순수 수프 배달 점수(sparse)를 빼돌립니다.
         sparse_reward = float(reward) 
 
         if self.reward_type == "shaped":
@@ -215,7 +214,6 @@ class _OvercookedWrapper(MultiAgentEnv):
         else:
             assert isinstance(done, bool) and done is True
 
-        # 👇 [수정 2] 빈 딕셔너리 {} 대신, 측정을 원하는 메트릭을 넘겨줍니다.
         return float(reward), done, {"sparse_reward": sparse_reward}
     
     
